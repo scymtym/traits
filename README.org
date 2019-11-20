@@ -1,0 +1,85 @@
+#+TITLE:   Traits Prototype
+#+OPTIONS: toc:nil num:nil
+
+* Introduction
+
+  Consider Shinmera's example:
+
+  #+BEGIN_QUOTE
+    Here's my use-case right now: typically an outside system using
+    Alloy will have its own event types. I'd like it to have "zero
+    cost" event mapping to Alloy's event types by adding them as
+    traits to the instances and implementing the necessary methods to
+    fetch the data. In Alloy itself the event dispatch would then work
+    as if you had created actual instances of the event classes.
+  #+END_QUOTE
+
+  So let's start by defining a protocol and an associated
+  trait [fn:1]:
+
+  #+BEGIN_SRC lisp :exports both :results silent
+    (defgeneric pointer-x (event))
+    (defgeneric pointer-y (event))
+
+    (traits:deftrait (event) pointer-event ()
+      (:method pointer-x ((event event)))
+      (:method pointer-y ((event event))))
+  #+END_SRC
+
+  This defines a specializer ~pointer-event-event~ for the ~event~
+  role of the ~pointer-event~ trait (sorry, didn't work on naming
+  conventions yet).
+
+  Traits can form a (multiple inheritance) hierarchy:
+
+  #+BEGIN_SRC lisp :exports both :results silent
+    (defgeneric pointer-button (event))
+
+    (traits:deftrait (event) pointer-button-event ((pointer-event event))
+
+      (:method pointer-button ((event event))))
+  #+END_SRC
+
+  Traits are used by defining the required methods for classes that
+  should play the roles defined by the trait:
+
+  #+BEGIN_SRC lisp :exports both :results silent
+    (defclass my-event () ; note: no superclass
+      ((%x :initarg :x :reader x)
+       (%y :initarg :y :reader y)))
+
+    (defmethod pointer-x ((event my-event))
+      (x event))
+
+    (defmethod pointer-y ((event my-event))
+      (y event))
+  #+END_SRC
+
+  Specializers generated for the roles of a trait can be used in
+  methods defined on generic functions that are instances of
+  ~traits:trait-generic-function~:
+
+  #+BEGIN_SRC lisp :exports both :results silent
+    (fmakunbound 'event-in-rectangle-p)
+
+    (defgeneric event-in-rectangle-p (event x1 y1 x2 y2)
+      (:generic-function-class traits:trait-generic-function))
+
+    ;; All the work above is just so we can write POINTER-EVENT-EVENT
+    ;; instead of MY-EVENT here.
+    (defmethod event-in-rectangle-p ((event pointer-event-event) x1 y1 x2 y2)
+      (and (<= x1 (pointer-x event) x2) (<= y1 (pointer-y event) y2)))
+  #+END_SRC
+
+  Does it work?
+
+  #+BEGIN_SRC lisp :exports both :results value verbatim
+    (list (event-in-rectangle-p (make-instance 'my-event :x 1 :y 2) 0 0 5 5)
+          (event-in-rectangle-p (make-instance 'my-event :x 1 :y 7) 0 0 5 5))
+  #+END_SRC
+
+* Footnotes
+
+[fn:1] "trait" may not be the best term since protocols in the context
+       of generic functions can involve multiple /roles/ instead of
+       revolving around a single object.
